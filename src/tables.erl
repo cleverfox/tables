@@ -1,6 +1,6 @@
 -module(tables).
 
--export([init/0,init/1,insert/2,get/2,get/3,lookup/3,lookup/4,del/2,addindex/2]).
+-export([init/0,init/1,insert/2,get/2,get/3,lookup/3,lookup/4,del/2,addindex/2,update/4]).
 
 -type table() :: {'table',#{'data':=map(), 'indexes':=map(), 'last_write':=integer()}}.
 -type id() :: integer().
@@ -30,6 +30,7 @@ addindex(NewIndexes, {table,#{data:=Data,indexes:=Index0}=Table}) ->
                             true -> [maps:with(Interest,V)|Acc]
                          end
                  end,[],Data),
+    {ok,
     {table,
      Table#{indexes => 
        lists:foldl(
@@ -50,13 +51,25 @@ addindex(NewIndexes, {table,#{data:=Data,indexes:=Index0}=Table}) ->
          end, 
          Index0,
          NewIndexes)
-      }}.
+      }}
+    }.
 
 
 -spec insert(map(), table()) -> {ok,term(),table()}.
-insert(Object, {table,#{data:=Data,indexes:=Index0,unique:=Uniq,mkidfun:=MkId}=Table}) ->
-    ID=MkId(),
-    NewData=maps:put(ID,Object#{'_id'=>ID},Data),
+insert(Object0, {table,#{data:=Data,indexes:=Index0,unique:=Uniq,mkidfun:=MkId}=Table}) ->
+    {Object,ID}=case maps:get('_id',Object0,undefined) of
+                    undefined ->
+                        TID=MkId(),
+                        {Object0#{'_id'=>TID}, TID};
+                    TID ->
+                        case maps:get(TID, Data, undefined) of
+                            undefined ->
+                                {Object0, TID};
+                            _ ->
+                                throw({constraint,unique,'_id'})
+                        end
+                end,
+    NewData=maps:put(ID,Object, Data),
     NewIndex=lists:foldl(
                fun(Key, Indexes) ->
                        try
@@ -119,7 +132,6 @@ del(ID,{table,#{data:=Data,indexes:=Index0}=Table}) ->
                            NewKeyIdx=maps:put(Val,Exists--[ID],KIdx),
                            maps:put(Key,NewKeyIdx,Indexes)
                        catch error:{badkey,Key} ->
-                                 io:format("BK ~p~n",[Key]),
                                  Indexes
                        end
                end, Index0, maps:keys(Index0)),
@@ -166,9 +178,23 @@ lookup_index(Key, Value, #{indexes:=Idx,data:=Data}, _Opts) ->
        end, IDs)
       }.
 
+update(Key, Value, NewObject, {table,#{indexes:=_Idx}=Table}) ->
+    {ok, Matched}=lookup(Key, Value, {table,Table},[]),
+    Table1=lists:foldl(
+      fun(Object,Acc) ->
+              New=maps:merge(Object,NewObject),
+              if Object == New ->
+                     Acc;
+                 true ->
+                     T2=del(Object,{table,Acc}),
+                     {ok, _, T3}=insert(New,T2),
+                     T3
+              end
+      end, Table, Matched),
+    {ok, Table1}.
+
 new_id() ->
     %Data = term_to_binary([make_ref(), erlang:system_time(), rand:uniform()]),
     %binary:decode_unsigned(crypto:hash(sha,Data)).
-    %(crypto:hash(sha,Data)).
     erlang:unique_integer([monotonic,positive]).
 
