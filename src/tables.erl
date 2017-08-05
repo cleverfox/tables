@@ -11,10 +11,13 @@ init() ->
 
 -spec init(map()) -> table().
 init(Params) ->
+    Indexes=lists:usort(maps:get(index,Params,[])++maps:get(unique,Params,[])),
     {table,#{
        data=>#{},
-       indexes=>lists:foldl(fun(E,Acc)->maps:put(E,#{},Acc) end,#{},maps:get(index,Params,[])),
-       last_write=>erlang:system_time()
+       indexes=>lists:foldl(fun(E,Acc)->maps:put(E,#{},Acc) end,#{},Indexes),
+       unique=>lists:foldl(fun(E,Acc)->maps:put(E,true,Acc) end,#{},maps:get(unique,Params,[])),
+       last_write=>erlang:system_time(),
+       mkidfun=>maps:get(mkidfun,Params,fun new_id/0)
       }}.
 
 -spec addindex(list(), table()) -> table().
@@ -51,8 +54,8 @@ addindex(NewIndexes, {table,#{data:=Data,indexes:=Index0}=Table}) ->
 
 
 -spec insert(map(), table()) -> {ok,term(),table()}.
-insert(Object, {table,#{data:=Data,indexes:=Index0}=Table}) ->
-    ID=new_id(),
+insert(Object, {table,#{data:=Data,indexes:=Index0,unique:=Uniq,mkidfun:=MkId}=Table}) ->
+    ID=MkId(),
     NewData=maps:put(ID,Object#{'_id'=>ID},Data),
     NewIndex=lists:foldl(
                fun(Key, Indexes) ->
@@ -60,6 +63,15 @@ insert(Object, {table,#{data:=Data,indexes:=Index0}=Table}) ->
                            Val=maps:get(Key,Object),
                            KIdx=maps:get(Key,Indexes),
                            Exists=maps:get(Val,KIdx,[]),
+                           if Exists==[] ->
+                                  ok;
+                              true ->
+                                  case maps:get(Key,Uniq,false) of
+                                      false -> ok;
+                                      true ->
+                                          throw({constraint,unique,Key})
+                                  end
+                           end,
                            NewKeyIdx=maps:put(Val,[ID|Exists],KIdx),
                            maps:put(Key,NewKeyIdx,Indexes)
                        catch error:{badkey,Key} ->
