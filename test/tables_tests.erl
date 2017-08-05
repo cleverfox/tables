@@ -13,6 +13,8 @@ test1() ->
     io:format("T3 ~p~n",[T3]),
     {ok,T4}=tables:update(n,element2,#{c=>10},T3),
     io:format("T4 ~p~n",[T4]),
+    {ok,T5}=tables:update(n,element2,#{a=>2},T4),
+    io:format("T5 ~p~n",[T5]),
     ok.
 
 all_test_() ->

@@ -178,7 +178,7 @@ lookup_index(Key, Value, #{indexes:=Idx,data:=Data}, _Opts) ->
        end, IDs)
       }.
 
-update(Key, Value, NewObject, {table,#{indexes:=_Idx}=Table}) ->
+update(Key, Value, NewObject, {table,#{indexes:=Idx}=Table}) ->
     {ok, Matched}=lookup(Key, Value, {table,Table},[]),
     Table1=lists:foldl(
       fun(Object,Acc) ->
@@ -186,9 +186,31 @@ update(Key, Value, NewObject, {table,#{indexes:=_Idx}=Table}) ->
               if Object == New ->
                      Acc;
                  true ->
-                     T2=del(Object,{table,Acc}),
-                     {ok, _, T3}=insert(New,T2),
-                     T3
+                     ChangeKeys=maps:keys(NewObject),
+                     FullUpdate=lists:foldl(
+                                  fun('_id', _) ->
+                                          true;
+                                     (_,true) -> 
+                                          true;
+                                     (Key1, false) ->
+                                          maps:is_key(Key1,Idx)
+                                  end,
+                                  false,
+                                  ChangeKeys),
+                     if FullUpdate -> %index affected. full update
+                            T2=del(Object,{table,Acc}),
+                            {ok, _, T3}=insert(New,T2),
+                            T3;
+                        true -> %index not affected
+                            {table, Acc#{
+                                      data => maps:put(
+                                                maps:get('_id',Object),
+                                                New,
+                                                maps:get(data,Acc)
+                                               )
+                                     }
+                            }
+                     end
               end
       end, Table, Matched),
     {ok, Table1}.
