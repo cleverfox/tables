@@ -30,6 +30,11 @@ all_test_() ->
     {ok,F6}=tables:lookup(n,element2,T3), 
     {ok,T4}=tables:update(n,element2,#{c=>10},T3),
     {ok,F7}=tables:lookup(n,element2,T4), 
+    {ok,_,T4a}=tables:upsert(n,#{c=>110,n=>element2},T3),
+    {ok,_,T4b}=tables:upsert(n,#{c=>111,n=>element3},T4a),
+    {ok,F8}=tables:lookup(n,element2,T4b), 
+    {ok,F9}=tables:lookup(n,element3,T4b), 
+
     [
     ?_assert(lists:sort([maps:get(n,E) || E<-F1]) =:= [element1,element2]),
     ?_assert(lists:sort([maps:get(n,E) || E<-F2]) =:= []),
@@ -37,6 +42,8 @@ all_test_() ->
     ?_assert(lists:sort([maps:get(n,E) || E<-F4]) =:= []),
     ?_assert(lists:sort([maps:get(n,E) || E<-F5]) =:= [element2]),
     ?_assert(maps:get(c,hd(F6)) =:= 2),
-    ?_assert(maps:get(c,hd(F7)) =:= 10)
+    ?_assert(maps:get(c,hd(F7)) =:= 10),
+    ?_assert(maps:get(c,hd(F8)) =:= 110),
+    ?_assert(maps:get(c,hd(F9)) =:= 111)
     ].
 
