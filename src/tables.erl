@@ -6,6 +6,7 @@
          insert/2,
          get/2,get/3,
          lookup/3,lookup/4,
+         mlookup/3,
          del/2,
          delete/3,
          addindex/2,
@@ -170,6 +171,40 @@ del(ID,{table,#{data:=Data,indexes:=Index0}=Table}) ->
 -spec lookup(term(), term(), table()) -> {ok, [map()]}.
 lookup(Field, Value, Table) ->
     lookup(Field, Value, Table, []).
+
+-spec mlookup(map(), table(), list()) -> {ok, [map()]}.
+mlookup(Map, {table,#{indexes:=Idx}=Table},Opts) ->
+    Keys=lists:reverse(
+          lists:keysort(1,
+                        maps:fold(
+                          fun(K,_V,Acc) ->
+                                  case maps:is_key(K, Idx) of
+                                      true ->
+                                          [{maps:size(maps:get(K,Idx)),K}|Acc];
+                                      false ->
+                                          Acc
+                                  end
+                          end, [], Map)
+                       )
+         ),
+    {ok,Matches}= case Keys of
+        [] -> %sequence scan
+            throw('no_keys');
+        [{_,Key}|_] -> %index lookup
+            lookup_index(Key,maps:get(Key,Map),Table,Opts)
+    end,
+    {ok,
+    lists:filter(
+      fun(Element) ->
+              maps:fold(
+                fun(_,_,false) -> false;
+                   (MKey,MVal,true) ->
+                        maps:get(MKey,Element,undefined)==MVal
+                end, true, Map)
+      end,
+      Matches)
+    }.
+
 
 -spec lookup(term(), term(), table(), list()) -> {ok, [map()]}.
 lookup(Key, Value, {table,#{indexes:=Idx}=Table},Opts) ->
