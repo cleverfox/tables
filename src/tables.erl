@@ -13,7 +13,8 @@
          update/4,
          upsert/3,
          export/1,
-         import/2
+         import/2,
+         to_list/1
         ]).
 
 -type table() :: {'table',#{'data':=map(), 'indexes':=map(), 'last_write':=integer()}}.
@@ -39,6 +40,10 @@ init(Params, {table, Table}) ->
     {table,Table#{
        mkidfun=>maps:get(mkidfun,Params,fun new_id/0)
       }}.
+
+-spec to_list(table()) -> list().
+to_list({table, #{data:=Data}}) ->
+    maps:values(Data).
 
 -spec addindex(list(), table()) -> table().
 addindex(NewIndexes, {table,#{data:=Data,indexes:=Index0}=Table}) ->
@@ -91,7 +96,36 @@ insert(Object0, {table,#{data:=Data,indexes:=Index0,unique:=Uniq,mkidfun:=MkId}=
                 end,
     NewData=maps:put(ID,Object, Data),
     NewIndex=lists:foldl(
-               fun(Key, Indexes) ->
+               fun(Key, Indexes) when is_tuple(Key) -> % not working yet
+                       throw("Multikey index not supported yet"),
+                       FindObj=lists:foldl(
+                                 fun(_,false) ->
+                                         false;
+                                    (IndexKey,AccObj) ->
+                                         case maps:is_key(IndexKey,Object) of
+                                             false ->
+                                                 %null field exists...
+                                                 false;
+                                             true ->
+                                                 maps:put(IndexKey,
+                                                          maps:get(IndexKey,Object),
+                                                          AccObj)
+                                         end
+                                 end,
+                                 #{},
+                                 erlang:tuple_to_list(Key)
+                                ),
+                       if FindObj==false ->
+                              Indexes;
+                          true ->
+                              case mlookup(FindObj,{table,Table},[]) of
+                                  {ok, []} ->
+                                      Indexes;
+                                  {ok, [Exists|_]} ->
+                                      throw({constraint,unique,Key,hd(Exists)})
+                              end
+                       end;
+                   (Key, Indexes) when is_atom(Key) ->
                        try
                            Val=maps:get(Key,Object),
                            KIdx=maps:get(Key,Indexes),
